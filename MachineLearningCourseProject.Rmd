@@ -1,0 +1,91 @@
+---
+title: "Coursera Practical Machine Learning Project"
+author: "Christopher Brown"
+date: "Sunday, April 12, 2015"
+output: html_document
+---
+
+# Background
+
+In this project, we analyze data collected from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways:
+
+* exactly according to the specification (Class A)
+
+* throwing the elbows to the front (Class B)
+
+* lifting the dumbbell only halfway (Class C)
+
+* lowering the dumbbell only halfway (Class D)
+
+* throwing the hips to the front (Class E)
+
+The data and more information is available from [http://groupware.les.inf.puc-rio.br/har](http://groupware.les.inf.puc-rio.br/har).  The published study is available at [http://www.jstatsoft.org/v28/i05/paper](http://www.jstatsoft.org/v28/i05/paper).
+
+The goal is to build a predictive model that accurately predicts the class (A, B, C, D, or E) stored in the **classe** variable based on the accelerometer data.
+
+We load two necessary packages.
+```{r,echo=FALSE}
+library(caret,quietly=TRUE,warn.conflicts=FALSE)
+library(randomForest,quietly=TRUE,warn.conflicts=FALSE)
+```
+
+# Loading and preparing the data
+
+We load the *training* data and the *testing* data.  The primary **exploratory data analysis** performed in this study was the visual inspection of the original data sets.
+
+The *testing* data set contains some variables that are NA in all records, and additionally several variables are concerned with obviously irrelevant data (such as a code for the subject's name).  We discarded these variables, and then have 53 predictor variables and one class variable *classe* in *training* (nothing is discarded from *testing*).  We then further discard all but the physical measurement variables, which turn out to be all the *roll*, *pitch*, and *yaw* variables, along with *classe*.  This leaves us with a much reduced training set, with 12 accelerometer variables and the one *classe* variable.
+```{r chunk="Load and Clean Data",echo=FALSE}
+setwd("C:\\Users\\Chris\\Desktop\\Coursera Machine Learning\\courseproject")
+training <- read.csv("pml-training.csv",header=TRUE)
+testing <- read.csv("pml-testing.csv",header=TRUE)
+tocut <- c("user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","new_window","num_window")
+for (n in names(testing)) {
+  if (all(is.na(testing[,n]))) {
+    tocut <- c(tocut,n)
+  }
+}
+training <- training[,sapply(names(training),function(z) !(z %in% tocut))]
+training <- training[,grep("roll|pitch|yaw|classe",names(training))]
+```
+
+We next split the *training* data set into data set *tr* (with 70% of the *training* data, randomly selected) and data set *te* (with the remaining 30% of the *training* data).  We will use *te* to make an estimate of the out-of-sample error.
+
+```{r chunk="Splitting the data"}
+set.seed(5454)
+tosplit <- createDataPartition(training$classe,p=0.7,list=FALSE)
+tr <- training[tosplit,]
+te <- training[-tosplit,]
+```
+
+# The predictive model: Random Forest
+
+We create a random forest predictive model.  With the random forest model, cross-validation is effectively achieved by averaging over many trees (and thus cross-validation is part of the model).  Parameters *ntree* and *mtry* were chosen by examining the model with only a small number of samples in *tr* (about 2% of the training data set), and tuning manually.
+
+```{r chunk="MLTree"}
+bigmodel <- randomForest(form=classe~.,data=tr,ntree=100,mtry=5,importance=TRUE)
+intrainingtest <- predict(bigmodel,newdata=te)
+outofsampleaccuracy <- length(which(te$classe==intrainingtest))/length(te$classe)
+```
+
+The confusion matrix for our prediction on *te* is
+```{r chunk="Confusion matrix"}
+confusionMatrix(intrainingtest,te$classe)$table
+```
+Visual inspection suggests that we have quite good predictive accuracy in all classes.  We also compute the accuracy of prediction on the data set *te* to be `r outofsampleaccuracy`, or over 99%, which is our **estimate of out-of-sample error**.
+
+At this point we predict the classes for the *testing* set.
+```{r chunk="Predict on the testing set"}
+answers <- predict(bigmodel,newdata=testing)
+```
+
+These answers were then written to files and submitted to the course website, with 20 of 20 predictions made correctly.
+```{r chunk="Write output files",echo=FALSE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(answers)
+```
